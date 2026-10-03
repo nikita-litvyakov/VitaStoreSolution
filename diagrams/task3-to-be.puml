@@ -1,0 +1,80 @@
+@startuml task3-to-be
+!include <C4/C4_Container>
+skinparam noteTextAlignment left
+skinparam wrapWidth 300
+
+title To-Be (HLD): облачная касса VitaStore с HAL и работой без связи (C4, уровень контейнеров)
+
+AddElementTag("hal", $bgColor = "#e07b00", $borderColor = "#9a5400", $legendText = "HAL / Payment Gateway — слой абстракции оборудования")
+AddElementTag("device", $bgColor = "#6b7b8c", $borderColor = "#46525e", $legendText = "оборудование магазина")
+AddRelTag("offline", $textColor = "#1b6e20", $lineColor = "#1b6e20", $legendText = "работает без связи")
+AddRelTag("sync", $lineStyle = DashedLine(), $legendText = "фоновая синхронизация при наличии связи")
+
+Person(cashier, "Кассир", "Сотрудник магазина")
+
+System_Boundary(store, "Магазин (Edge): планшет, ККТ, терминал, роутер") {
+  Container(posapp, "Приложение облачной кассы", "Клиент SaaS-кассы на планшете (вендор кассы)", "Продажа offline-first: каталог, цены и чеки — всегда локально")
+  ContainerDb(local, "Локальное хранилище", "Встроенная БД приложения кассы", "Кэш каталога, цен, баланса лояльности; очередь исходящих чеков с уникальным ID")
+  Container(hal, "HAL-агент", "Приложение-сервис шлюза на планшете (SaaS, вендор шлюза)", "Наш контракт: оплатить / вернуть / напечатать чек. Локальные драйверы ККТ и USB-терминалов", $tags = "hal")
+  Container(kkt, "ККТ с фискальным накопителем", "USB / Bluetooth", "Без связи копит чеки в ФН (до 30 дней)", $tags = "device")
+  Container(usbterm, "Платёжный терминал (USB)", "Терминалы купленных сетей", $tags = "device")
+  Container(netterm, "Платёжный терминал (сетевой)", "LAN / Wi-Fi / SIM", $tags = "device")
+  Container(router, "Роутер", "Основной канал + резервный LTE", "Автопереключение каналов", $tags = "device")
+}
+
+System_Boundary(cloud, "Облако (Cloud Backend)") {
+  Container(posbe, "Бэкенд облачной кассы", "SaaS", "Приём чеков (идемпотентно по ID), раздача каталога и цен")
+  Container(pgw, "Payment Gateway", "SaaS", "Единый API оплаты, маршрутизация в банки, управление сетевыми терминалами", $tags = "hal")
+  Container(loyal, "Платформа лояльности", "SaaS, ПДн в РФ", "Баланс и списание баллов")
+  Container(integ, "Интеграционный слой", "PaaS: шина событий / API-шлюз", "Вместо ночного FTP: данные за минуты")
+  Container(ai, "AI-сервис сопоставления", "PaaS", "Номенклатура купленных сетей → справочник VitaStore")
+  Container(orch, "Оркестратор подключения", "PaaS", "Подключение магазина через API сервисов")
+  Container(sf, "Smart Fulfillment", "PaaS", "Click & Collect")
+  Container(mdm, "Управление планшетами (MDM)", "SaaS", "Настройки и обновления без выезда")
+}
+
+System_Boundary(hq, "Центральный офис (HQ), on-premise — временно") {
+  Container(sap, "SAP ERP", "On-premise", "Справочник, цены, остатки, учёт; расчёт начислений баллов и премий")
+}
+
+System_Ext(ofd, "ОФД / ФНС", "Фискальные данные")
+System_Ext(bank, "Банки-эквайеры", "Авторизация карт")
+
+Rel(cashier, posapp, "Продаёт", "UI")
+Rel(posapp, local, "Читает каталог и цены, пишет чеки в очередь", "Локально", $tags = "offline")
+Rel(posapp, hal, "Оплатить / вернуть / напечатать чек", "Наш контракт, локальный API на планшете", $tags = "offline")
+Rel(hal, kkt, "Фискализация чека", "Локальный драйвер", $tags = "offline")
+Rel(hal, usbterm, "Оплата картой", "Локальный драйвер USB")
+Rel(hal, pgw, "Оплата через сетевой терминал", "HTTPS")
+Rel(pgw, netterm, "Команда оплаты", "Облачный API терминала")
+Rel(pgw, bank, "Авторизация", "API банка")
+Rel(usbterm, bank, "Авторизация", "Канал терминала")
+Rel(kkt, ofd, "Фискальные данные", "Сама, когда есть связь", $tags = "sync")
+
+Rel_D(posapp, posbe, "Чеки из очереди; изменения каталога и цен", "HTTPS через роутер, фоном, повтор по ID", $tags = "sync")
+Rel(posapp, loyal, "Баланс и списание баллов", "Онлайн; без связи — по кэшу, ≤ 30% чека", $tags = "sync")
+Rel(mdm, posapp, "Настройки и обновления", "MDM")
+
+Rel(posbe, integ, "Чеки", "События")
+BiRel_D(integ, sap, "→ SAP: продажи, остатки; ← SAP: справочник, цены, начисления баллов", "API / события")
+Rel(integ, posbe, "Справочник и цены", "Минуты вместо FTP 02:00")
+Rel(integ, loyal, "Начисления после срока возврата; списания — в учёт", "API")
+Rel(integ, sf, "Остатки магазинов", "События")
+Rel(ai, integ, "Утверждённый справочник купленной сети", "API")
+Rel(orch, integ, "Подключение магазина: касса, шлюз, лояльность", "API")
+
+Lay_D(store, cloud)
+Lay_D(cloud, hq)
+Lay_R(ofd, bank)
+Lay_D(cashier, posapp)
+
+note as offline
+  <b>Без связи</b>
+  • Наличные + фискальный чек — всегда: каталог и цены в кэше, ККТ через локальный HAL.
+  • Карта — через LTE, если упал основной канал; без обоих каналов — только наличные.
+  • Баллы: начисление считается централизованно позже; списание по кэшу, ≤ 30% чека.
+  • После связи: сначала чеки из очереди, потом изменения справочников.
+end note
+
+SHOW_LEGEND()
+@enduml

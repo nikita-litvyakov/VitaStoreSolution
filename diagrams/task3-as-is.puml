@@ -1,0 +1,69 @@
+@startuml task3-as-is
+!include <C4/C4_Container>
+skinparam noteTextAlignment left
+skinparam wrapWidth 420
+
+title AS-IS: кассовая зона и обмен данными VitaStore (C4, уровень контейнеров)
+
+AddRelTag("manual", $lineStyle = DashedLine(), $textColor = "#8a4b00", $lineColor = "#8a4b00", $legendText = "ручная операция")
+AddRelTag("fixed", $textColor = "#b00020", $lineColor = "#b00020", $legendText = "исправлено относительно артефакта 1")
+AddElementTag("pain", $bgColor = "#b00020", $borderColor = "#7a0016", $legendText = "точка отказа / боль кейса")
+
+Person(cashier, "Кассир", "Сотрудник магазина")
+Person(engineer, "Выездной ИТ-инженер", "Командировка в магазин")
+Person(merch, "Товаровед HQ", "Команда Data Integration")
+
+System_Boundary(store, "Магазин VitaStore (типовой)") {
+  Container(pos, "Кассовое приложение", "Windows, C#, «толстый» клиент", "Монолит: бизнес-логика и встроенные драйверы оборудования")
+  ContainerDb(localdb, "Локальная БД", "MS SQL Server / PostgreSQL, сервер в подсобке", "Цены, справочник, чеки. Лицензии Windows Server / SQL в каждом магазине", $tags = "pain")
+  Container(kkt, "ККТ / фискальный принтер", "COM-порт")
+  Container(term, "Платёжные терминалы", "USB / COM, драйвер под каждую модель", "Разнородный парк: Сбер (ARCUS-2), Альфа, Ingenico, Verifone", $tags = "pain")
+}
+
+System_Boundary(acq, "Купленный магазин (до интеграции)") {
+  Container(oldpos, "Касса купленной сети", "Своя система", "Своя номенклатура")
+  Container(notebook, "Учёт лояльности", "Бумажная тетрадь", "Баллы ведут вручную продавцы — дубль лояльности в SAP", $tags = "pain")
+}
+
+System_Boundary(hq, "Центральный офис (HQ), on-premise") {
+  Container(sap, "SAP ERP", "On-premise", "Товары, цены, лояльность, кадры, финансы")
+  Container(mail, "Почтовый ящик data-integration@", "Email")
+  Container(excel, "Excel с макросом VLOOKUP", "Рабочее место товароведа")
+}
+
+Rel(cashier, pos, "Пробивает чеки", "UI")
+Rel(pos, localdb, "Читает цены, пишет чеки", "SQL, синхронно")
+Rel(pos, kkt, "Печать фискального чека", "Драйвер COM-порта")
+Rel(pos, term, "Оплата картой", "Драйвер под модель; новый терминал — 3 недели (INC-8415)", $tags = "fixed")
+Rel_L(sap, localdb, "Прайс-листы и справочник", "XML по FTP, раз в сутки в 02:00", $tags = "fixed")
+Rel(pos, sap, "Списание и начисление баллов", "Онлайн-запрос; без связи — отказ по тайм-ауту (INC-8402)", $tags = "fixed")
+
+Rel(engineer, oldpos, "Снимает дамп номенклатуры", "Выезд, CSV / XLS", $tags = "manual")
+Rel(engineer, mail, "Отправляет дамп", "Email", $tags = "manual")
+Rel(merch, mail, "Забирает дамп", "Email", $tags = "manual")
+Rel(merch, excel, "Сопоставляет по штрихкодам, остальное вручную", "≈ 500 позиций/ч, 15% ошибок", $tags = "manual")
+Rel(merch, sap, "Загружает итоговый файл", "Вручную", $tags = "manual")
+Rel(engineer, localdb, "Настраивает и чинит сервер", "Выезд, ETA 4–6 ч (INC-8433)", $tags = "manual")
+
+Lay_R(store, acq)
+Lay_R(acq, hq)
+Lay_D(cashier, pos)
+Lay_D(engineer, oldpos)
+Lay_D(merch, excel)
+
+note as fixes
+  <b>Исправлено относительно артефакта 1:</b>
+  1. «Real-time REST» между кассой и SAP — фикция:
+     цены и справочник приходят ночным XML по FTP (02:00).
+  2. Онлайн только лояльность — и без связи она отказывает.
+  3. В артефакте 1 один терминал Ingenico.
+     На деле — терминалы разных банков (Сбер, Альфа, Ingenico, Verifone),
+     драйвер каждой модели зашит в кассу.
+  4. Добавлен ручной конвейер номенклатуры:
+     дамп → email → Excel → SAP.
+  5. Добавлена «тетрадка» лояльности купленных магазинов.
+  Передача продаж из магазина в SAP в кейсе не описана.
+end note
+
+SHOW_LEGEND()
+@enduml
