@@ -1,9 +1,9 @@
-@startuml task3-to-be
+@startuml task3-hld
 !include <C4/C4_Container>
 skinparam noteTextAlignment left
 skinparam wrapWidth 300
 
-title To-Be (HLD): облачная касса VitaStore с HAL и работой без связи (C4, уровень контейнеров)
+title HLD (To-Be): облачная касса VitaStore с HAL и работой без связи (C4, уровень контейнеров)
 
 AddElementTag("hal", $bgColor = "#e07b00", $borderColor = "#9a5400", $legendText = "HAL / Payment Gateway — слой абстракции оборудования")
 AddElementTag("device", $bgColor = "#6b7b8c", $borderColor = "#46525e", $legendText = "оборудование магазина")
